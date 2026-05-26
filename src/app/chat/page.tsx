@@ -6,7 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Spinner } from "@/components/ui/Spinner";
-import { streamAsk, uploadPdfs, fetchUploadsList, retryJob } from "@/lib/api";
+import { streamAsk, uploadSinglePdf, fetchUploadsList, retryJob } from "@/lib/api";
 import { isActiveStatus, type ChatMessage, type IngestionJob } from "@/lib/types";
 
 function ChatBubble({ m }: { m: ChatMessage }) {
@@ -73,10 +73,12 @@ export default function ChatPage() {
 
   // Job state for maintainer
   const [jobs, setJobs] = useState<IngestionJob[]>([]);
-  const [uploading, setUploading] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [uploadQueue, setUploadQueue] = useState<{ name: string; status: "pending" | "uploading" | "done" | "error"; error?: string }[]>([]);
+  const uploading = uploadQueue.some((f) => f.status === "uploading");
+  const MAX_FILE_SIZE = 32 * 1024 * 1024;
 
   // Auth guard
   useEffect(() => {
@@ -186,19 +188,38 @@ export default function ChatPage() {
   const handleFiles = useCallback(async (files: FileList | File[]) => {
     const pdfs = Array.from(files).filter((f) => f.name.toLowerCase().endsWith(".pdf"));
     if (pdfs.length === 0) return;
-    setUploading(true);
-    try {
-      const res = await uploadPdfs(pdfs);
-      const newJobs: IngestionJob[] = res.jobs.map((j) => ({
-        jobId: j.id, fileName: j.original_filename, status: j.status,
-        detail: j.error_message, chunksIndexed: j.total_chunks ?? undefined,
-        createdAt: Date.now(),
-      }));
-      setJobs((p) => [...newJobs, ...p]);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed");
-    } finally {
-      setUploading(false);
+
+    const oversized = pdfs.filter((f) => f.size > MAX_FILE_SIZE);
+    if (oversized.length > 0) {
+      setError(`File(s) exceed 32MB limit: ${oversized.map((f) => f.name).join(", ")}`);
+      return;
+    }
+
+    const queue = pdfs.map((f) => ({ name: f.name, status: "pending" as const }));
+    setUploadQueue((prev) => [...prev, ...queue]);
+
+    for (const file of pdfs) {
+      setUploadQueue((prev) =>
+        prev.map((item) => item.name === file.name && item.status === "pending" ? { ...item, status: "uploading" as const } : item)
+      );
+
+      try {
+        const res = await uploadSinglePdf(file);
+        const newJob: IngestionJob = {
+          jobId: res.id, fileName: res.original_filename, status: res.status,
+          detail: res.error_message, chunksIndexed: res.total_chunks ?? undefined,
+          createdAt: Date.now(),
+        };
+        setJobs((p) => [newJob, ...p]);
+        setUploadQueue((prev) =>
+          prev.map((item) => item.name === file.name && item.status === "uploading" ? { name: item.name, status: "done" as const } : item)
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Upload failed";
+        setUploadQueue((prev) =>
+          prev.map((item) => item.name === file.name && item.status === "uploading" ? { name: item.name, status: "error" as const, error: msg } : item)
+        );
+      }
     }
   }, []);
 
@@ -307,7 +328,7 @@ export default function ChatPage() {
                 <p className="mt-2 text-xs font-medium">
                   {uploading ? "Uploading…" : "Drop PDFs or click"}
                 </p>
-                <p className="mt-1 text-[10px] text-[var(--muted)]">Multiple files supported</p>
+                <p className="mt-1 text-[10px] text-[var(--muted)]">Multiple files supported (max 32MB each)</p>
               </div>
               <input
                 ref={fileInputRef}
@@ -317,6 +338,37 @@ export default function ChatPage() {
                 className="hidden"
                 onChange={(e) => { if (e.target.files?.length) void handleFiles(e.target.files); e.target.value = ""; }}
               />
+              {uploadQueue.length > 0 && (
+                <div className="mt-3 space-y-1.5">
+                  {uploadQueue.map((f) => (
+                    <div key={f.name} className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2">
+                      {f.status === "uploading" ? (
+                        <Spinner size={12} />
+                      ) : f.status === "done" ? (
+                        <svg className="h-3.5 w-3.5 shrink-0 text-emerald-500" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      ) : f.status === "error" ? (
+                        <svg className="h-3.5 w-3.5 shrink-0 text-red-500" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                        </svg>
+                      ) : (
+                        <svg className="h-3.5 w-3.5 shrink-0 text-[var(--muted)]" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                      <span className={`flex-1 truncate text-[11px] ${
+                        f.status === "error" ? "text-red-600" : f.status === "done" ? "text-emerald-600" : "text-[var(--text)]"
+                      }`}>
+                        {f.name}
+                      </span>
+                      <span className="shrink-0 text-[10px] text-[var(--muted)]">
+                        {f.status === "pending" ? "Queued" : f.status === "uploading" ? "Uploading…" : f.status === "error" ? "Failed" : "Done"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Active jobs */}

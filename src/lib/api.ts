@@ -4,7 +4,7 @@ import type {
   SystemLog,
 } from "./types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "http://localhost:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "https://bge-m3-docling-parser-v2-107109907138.asia-south1.run.app";
 
 export function getApiUrl(): string { return API_URL; }
 
@@ -58,6 +58,20 @@ export async function login(body: LoginRequest): Promise<TokenResponse> {
 export async function uploadPdfs(files: File[]): Promise<UploadBulkResponse> {
   const form = new FormData();
   files.forEach((f) => form.append("files", f));
+  const res = await fetch(`${API_URL}/uploads/upload-pdf`, {
+    method: "POST", headers: { ...authHeaders() }, body: form,
+  });
+  if (!res.ok) {
+    if (res.status === 401) handle401();
+    const err = await res.json().catch(() => ({ detail: "Upload failed" }));
+    throw new Error(typeof err.detail === "string" ? err.detail : "Upload failed");
+  }
+  return res.json();
+}
+
+export async function uploadSinglePdf(file: File): Promise<UploadJobResponse> {
+  const form = new FormData();
+  form.append("files", file);
   const res = await fetch(`${API_URL}/uploads/upload-pdf`, {
     method: "POST", headers: { ...authHeaders() }, body: form,
   });

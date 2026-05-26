@@ -7,7 +7,7 @@ import { useToast } from "@/context/ToastContext";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Spinner } from "@/components/ui/Spinner";
-import { fetchUploadsList, uploadPdfs, retryJob } from "@/lib/api";
+import { fetchUploadsList, uploadSinglePdf, retryJob } from "@/lib/api";
 import { formatDate, timeAgo, type UploadJobResponse } from "@/lib/types";
 
 export default function UploadsPage() {
@@ -21,10 +21,11 @@ export default function UploadsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [uploadQueue, setUploadQueue] = useState<{ name: string; status: "pending" | "uploading" | "done" | "error"; error?: string }[]>([]);
+  const uploading = uploadQueue.some((f) => f.status === "uploading");
+  const MAX_FILE_SIZE = 32 * 1024 * 1024;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -48,18 +49,42 @@ export default function UploadsPage() {
   const handleFiles = useCallback(async (files: FileList | File[]) => {
     const pdfs = Array.from(files).filter((f) => f.name.toLowerCase().endsWith(".pdf"));
     if (pdfs.length === 0) return;
-    setUploadError(null);
-    setUploading(true);
-    try {
-      const res = await uploadPdfs(pdfs);
-      if (res.jobs.length > 0) {
-        await load(false);
-        addToast("success", "Upload successful");
+
+    const oversized = pdfs.filter((f) => f.size > MAX_FILE_SIZE);
+    if (oversized.length > 0) {
+      addToast("error", `File(s) exceed 32MB limit: ${oversized.map((f) => f.name).join(", ")}`);
+      return;
+    }
+
+    const queue = pdfs.map((f) => ({ name: f.name, status: "pending" as const }));
+    setUploadQueue((prev) => [...prev, ...queue]);
+
+    let errorCount = 0;
+
+    for (let i = 0; i < pdfs.length; i++) {
+      const file = pdfs[i];
+      setUploadQueue((prev) =>
+        prev.map((item) => item.name === file.name && item.status === "pending" ? { ...item, status: "uploading" as const } : item)
+      );
+
+      try {
+        await uploadSinglePdf(file);
+        setUploadQueue((prev) =>
+          prev.map((item) => item.name === file.name && item.status === "uploading" ? { name: item.name, status: "done" as const } : item)
+        );
+      } catch (err) {
+        errorCount++;
+        const msg = err instanceof Error ? err.message : "Upload failed";
+        setUploadQueue((prev) =>
+          prev.map((item) => item.name === file.name && item.status === "uploading" ? { name: item.name, status: "error" as const, error: msg } : item)
+        );
       }
-    } catch (err) {
-      setUploadError(err instanceof Error ? err.message : "Upload failed");
-    } finally {
-      setUploading(false);
+    }
+
+    await load(false);
+    setUploadQueue((prev) => prev.filter((f) => f.status === "error"));
+    if (errorCount === 0) {
+      addToast("success", "All uploads completed");
     }
   }, [load, addToast]);
 
@@ -136,7 +161,7 @@ export default function UploadsPage() {
               <p className="mt-3 text-sm font-medium">
                 {uploading ? "Uploading…" : "Drop PDFs here or click to browse"}
               </p>
-              <p className="mt-1 text-xs text-[var(--muted)]">Multiple PDF files supported</p>
+              <p className="mt-1 text-xs text-[var(--muted)]">Multiple PDF files supported (max 32MB each)</p>
             </div>
             <input
               ref={fileInputRef}
@@ -146,9 +171,35 @@ export default function UploadsPage() {
               className="hidden"
               onChange={(e) => { if (e.target.files?.length) void handleFiles(e.target.files); e.target.value = ""; }}
             />
-            {uploadError && (
-              <div className="mt-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                <span className="font-bold">✕</span> {uploadError}
+            {uploadQueue.length > 0 && (
+              <div className="mt-4 space-y-1.5">
+                {uploadQueue.map((f) => (
+                  <div key={f.name} className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2">
+                    {f.status === "uploading" ? (
+                      <Spinner size={12} />
+                    ) : f.status === "done" ? (
+                      <svg className="h-3.5 w-3.5 shrink-0 text-emerald-500" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                    ) : f.status === "error" ? (
+                      <svg className="h-3.5 w-3.5 shrink-0 text-red-500" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                      </svg>
+                    ) : (
+                      <svg className="h-3.5 w-3.5 shrink-0 text-[var(--muted)]" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                      </svg>
+                    )}
+                    <span className={`flex-1 truncate text-xs ${
+                      f.status === "error" ? "text-red-600" : f.status === "done" ? "text-emerald-600" : "text-[var(--text)]"
+                    }`}>
+                      {f.name}
+                    </span>
+                    <span className="shrink-0 text-[11px] text-[var(--muted)]">
+                      {f.status === "pending" ? "Queued" : f.status === "uploading" ? "Uploading…" : f.status === "error" ? "Failed" : "Done"}
+                    </span>
+                  </div>
+                ))}
               </div>
             )}
           </div>
