@@ -52,8 +52,10 @@ function JobProgressCard({ job, onRetry, retrying }: { job: UploadJobResponse; o
         )}
         {job.error_message && (
           <div className="col-span-2">
-            <span className="font-semibold uppercase tracking-wider text-[10px] text-red-600">Error</span>
-            <p className="text-red-600">{job.error_message}</p>
+            <span className={`font-semibold uppercase tracking-wider text-[10px] ${job.status === "COMPLETED" ? "text-emerald-600" : "text-red-600"}`}>
+              {job.status === "COMPLETED" ? "Remarks" : "Error"}
+            </span>
+            <p className={job.status === "COMPLETED" ? "text-emerald-600" : "text-red-600"}>{job.error_message}</p>
           </div>
         )}
         {job.status === "FAILED" && (

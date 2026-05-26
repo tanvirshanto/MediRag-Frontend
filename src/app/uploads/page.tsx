@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { useToast } from "@/context/ToastContext";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Spinner } from "@/components/ui/Spinner";
@@ -11,6 +12,7 @@ import { formatDate, timeAgo, type UploadJobResponse } from "@/lib/types";
 
 export default function UploadsPage() {
   const { user, loading: authLoading } = useAuth();
+  const { addToast } = useToast();
   const router = useRouter();
 
   const [jobs, setJobs] = useState<UploadJobResponse[]>([]);
@@ -50,13 +52,16 @@ export default function UploadsPage() {
     setUploading(true);
     try {
       const res = await uploadPdfs(pdfs);
-      if (res.jobs.length > 0) await load(false);
+      if (res.jobs.length > 0) {
+        await load(false);
+        addToast("success", "Upload successful");
+      }
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
     }
-  }, [load]);
+  }, [load, addToast]);
 
   const handleRetry = useCallback(async (jobId: string) => {
     setRetryingId(jobId);
@@ -204,8 +209,10 @@ export default function UploadsPage() {
                             </div>
                             {j.error_message && (
                               <div className="sm:col-span-3">
-                                <p className="font-semibold uppercase tracking-wider text-red-600">Error</p>
-                                <p className="mt-0.5 text-red-600">{j.error_message}</p>
+                                <p className={`font-semibold uppercase tracking-wider ${j.status === "COMPLETED" ? "text-emerald-600" : "text-red-600"}`}>
+                                  {j.status === "COMPLETED" ? "Remarks" : "Error"}
+                                </p>
+                                <p className={`mt-0.5 ${j.status === "COMPLETED" ? "text-emerald-600" : "text-red-600"}`}>{j.error_message}</p>
                               </div>
                             )}
                             {j.status === "FAILED" && (

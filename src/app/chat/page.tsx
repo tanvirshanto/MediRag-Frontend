@@ -353,8 +353,8 @@ export default function ChatPage() {
                       {j.status === "COMPLETED" && j.chunksIndexed != null && (
                         <p className="mt-1 text-[11px] text-emerald-600">{j.chunksIndexed} chunks indexed</p>
                       )}
-                      {j.status === "FAILED" && j.detail && (
-                        <p className="mt-1 line-clamp-2 text-[10px] text-red-600">{j.detail}</p>
+                      {j.detail && (
+                        <p className={`mt-1 line-clamp-2 text-[10px] ${j.status === "COMPLETED" ? "text-emerald-600" : "text-red-600"}`}>{j.detail}</p>
                       )}
                       {j.status === "FAILED" && (
                         <button

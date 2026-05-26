@@ -46,6 +46,15 @@ export interface NavItem {
   label: string; href: string; icon: string; roles: UserRole[];
 }
 
+// ── System Logs ──
+export interface SystemLog {
+  id: string;
+  level: string;
+  message: string;
+  traceback: string | null;
+  created_at: string;
+}
+
 // ── Helpers ──
 export const STATUS_COLORS: Record<JobStatus, string> = {
   QUEUED: "bg-slate-100 text-slate-600 border-slate-200",
@@ -62,6 +71,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Chat & Upload", href: "/chat", icon: "💬", roles: ["maintainer", "user"] },
   { label: "Upload Management", href: "/uploads", icon: "📋", roles: ["maintainer"] },
   { label: "Status Monitor", href: "/status", icon: "📊", roles: ["maintainer"] },
+  { label: "System Logs", href: "/status/logs", icon: "🖥️", roles: ["maintainer"] },
   { label: "Users", href: "/users", icon: "👥", roles: ["maintainer"] },
 ];
 

@@ -1,6 +1,7 @@
 import type {
   LoginRequest, TokenResponse, UploadBulkResponse, UploadJobResponse,
   UploadListResponse, UserCreate, UserResponse, UserUpdate, StreamEvent,
+  SystemLog,
 } from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "http://localhost:8000";
@@ -97,6 +98,14 @@ export function updateUser(userId: string, body: UserUpdate): Promise<UserRespon
 }
 export function deleteUser(userId: string): Promise<void> {
   return apiFetch(`/users/${userId}`, { method: "DELETE" });
+}
+
+// ── System Logs ──
+export function fetchSystemLogs(limit = 100, offset = 0): Promise<SystemLog[]> {
+  const p = new URLSearchParams();
+  p.set("limit", String(limit));
+  p.set("offset", String(offset));
+  return apiFetch(`/system-logs?${p.toString()}`);
 }
 
 // ── Ask (streaming) ──
