@@ -389,11 +389,11 @@ export default function ChatPage() {
                   <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-700">{activeCount} active</span>
                 )}
               </div>
-              {jobs.length === 0 ? (
-                <p className="py-8 text-center text-xs text-[var(--muted)]">No uploads yet</p>
+              {jobs.filter((j) => j.status !== "COMPLETED").length === 0 ? (
+                <p className="py-8 text-center text-xs text-[var(--muted)]">No active uploads</p>
               ) : (
                 <ul className="space-y-2">
-                  {jobs.map((j) => (
+                  {jobs.filter((j) => j.status !== "COMPLETED").map((j) => (
                     <li key={j.jobId} className="rounded-xl border border-[var(--border)] bg-[var(--bg)] p-3">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">

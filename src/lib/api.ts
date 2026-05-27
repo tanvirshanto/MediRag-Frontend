@@ -4,7 +4,7 @@ import type {
   SystemLog,
 } from "./types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "https://bge-m3-docling-parser-v2-107109907138.asia-south1.run.app";
+const API_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "http://localhost:8000";
 
 export function getApiUrl(): string { return API_URL; }
 
@@ -83,10 +83,11 @@ export async function uploadSinglePdf(file: File): Promise<UploadJobResponse> {
   return res.json();
 }
 
-export function fetchUploadsList(status?: string, limit = 50, offset = 0): Promise<UploadListResponse> {
+export function fetchUploadsList(status?: string, limit = 50, offset = 0, search?: string): Promise<UploadListResponse> {
   const p = new URLSearchParams();
   if (status) p.set("status", status);
   p.set("limit", String(limit)); p.set("offset", String(offset));
+  if (search) p.set("search", search);
   return apiFetch(`/uploads?${p.toString()}`);
 }
 

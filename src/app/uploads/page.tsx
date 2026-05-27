@@ -7,6 +7,7 @@ import { useToast } from "@/context/ToastContext";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Spinner } from "@/components/ui/Spinner";
+import { Pagination } from "@/components/ui/Pagination";
 import { fetchUploadsList, uploadSinglePdf, retryJob } from "@/lib/api";
 import { formatDate, timeAgo, type UploadJobResponse } from "@/lib/types";
 
@@ -15,11 +16,15 @@ export default function UploadsPage() {
   const { addToast } = useToast();
   const router = useRouter();
 
+  const [pageSize, setPageSize] = useState(15);
   const [jobs, setJobs] = useState<UploadJobResponse[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("");
+  const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [page, setPage] = useState(0);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [retryingId, setRetryingId] = useState<string | null>(null);
@@ -27,6 +32,7 @@ export default function UploadsPage() {
   const uploading = uploadQueue.some((f) => f.status === "uploading");
   const MAX_FILE_SIZE = 32 * 1024 * 1024;
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) { router.replace("/login"); return; }
@@ -37,12 +43,17 @@ export default function UploadsPage() {
     if (showSpinner) setLoading(true);
     else setRefreshing(true);
     try {
-      const res = await fetchUploadsList(statusFilter || undefined);
+      const res = await fetchUploadsList(statusFilter || undefined, pageSize, page * pageSize, search || undefined);
       setJobs(res.jobs);
       setTotal(res.total);
     } catch { /* toast handled elsewhere */ }
     finally { setLoading(false); setRefreshing(false); }
-  }, [statusFilter]);
+  }, [statusFilter, page, pageSize, search]);
+
+  const handlePageSizeChange = useCallback((newSize: number) => {
+    setPageSize(newSize);
+    setPage(0);
+  }, []);
 
   useEffect(() => { if (user?.role === "maintainer") void load(); }, [load, user]);
 
@@ -122,12 +133,40 @@ export default function UploadsPage() {
               </svg>
               Refresh
             </button>
-            {/* Filter */}
+            <div className="relative">
+              <svg className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--muted)]" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+              </svg>
+              <input
+                type="text"
+                value={searchInput}
+                onChange={(e) => {
+                  setSearchInput(e.target.value);
+                  if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+                  searchTimerRef.current = setTimeout(() => {
+                    setSearch(e.target.value);
+                    setPage(0);
+                  }, 300);
+                }}
+                placeholder="Search files…"
+                className="rounded-xl border border-[var(--border)] py-2 pl-9 pr-3 text-sm outline-none transition focus:border-[var(--accent-dim)] focus:ring-1 focus:ring-[var(--accent-dim)]"
+              />
+              {searchInput && (
+                <button
+                  onClick={() => { setSearchInput(""); setSearch(""); setPage(0); }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--muted)] hover:text-[var(--text)]"
+                >
+                  <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              )}
+            </div>
             <div className="flex gap-2">
             {["", "QUEUED", "RUNNING", "COMPLETED", "FAILED"].map((s) => (
               <button
                 key={s}
-                onClick={() => setStatusFilter(s)}
+                onClick={() => { setStatusFilter(s); setPage(0); }}
                 className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
                   statusFilter === s
                     ? "border-[var(--accent-dim)] bg-[var(--accent-dim)] text-white"
@@ -229,8 +268,8 @@ export default function UploadsPage() {
                       className="cursor-pointer transition hover:bg-[var(--bg)]"
                     >
                       <td className="px-5 py-3">
-                        <p className="font-medium truncate max-w-[200px]">{j.original_filename}</p>
-                        <p className="font-mono text-[10px] text-[var(--muted)]">{j.id.slice(0, 14)}…</p>
+                        <p className="font-medium truncate max-w-full">{j.original_filename}</p>
+                        <p className="font-mono text-[10px] text-[var(--muted)]">{j.id}</p>
                       </td>
                       <td className="px-5 py-3 hidden sm:table-cell text-[var(--muted)]">{j.uploaded_by || "—"}</td>
                       <td className="px-5 py-3"><StatusBadge status={j.status} /></td>
@@ -304,6 +343,13 @@ export default function UploadsPage() {
             )}
           </div>
         )}
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={setPage}
+          onPageSizeChange={handlePageSizeChange}
+        />
       </div>
     </DashboardLayout>
   );

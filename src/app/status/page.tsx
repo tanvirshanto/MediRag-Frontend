@@ -1,13 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Spinner } from "@/components/ui/Spinner";
+import { Pagination } from "@/components/ui/Pagination";
 import { fetchUploadsList, retryJob } from "@/lib/api";
-import { formatDate, timeAgo, isActiveStatus, type UploadJobResponse } from "@/lib/types";
+import { formatDate, timeAgo, isActiveStatus, type JobStatus, type UploadJobResponse } from "@/lib/types";
 
 function JobProgressCard({ job, onRetry, retrying }: { job: UploadJobResponse; onRetry: (id: string) => void; retrying: string | null }) {
   return (
@@ -21,7 +22,7 @@ function JobProgressCard({ job, onRetry, retrying }: { job: UploadJobResponse; o
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             {job.status === "RUNNING" && <Spinner size={14} />}
-            <p className="truncate font-semibold text-sm">{job.original_filename}</p>
+            <p className="font-semibold text-sm">{job.original_filename}</p>
           </div>
           <p className="mt-0.5 font-mono text-[10px] text-[var(--muted)]">{job.id.slice(0, 14)}…</p>
         </div>
@@ -95,6 +96,16 @@ export default function StatusPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [activeExpanded, setActiveExpanded] = useState(true);
+  const [completedExpanded, setCompletedExpanded] = useState(true);
+  const [statusFilter, setStatusFilter] = useState<string>("");
+  const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [activePage, setActivePage] = useState(0);
+  const [completedPage, setCompletedPage] = useState(0);
+  const [activePageSize, setActivePageSize] = useState(12);
+  const [completedPageSize, setCompletedPageSize] = useState(12);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) { router.replace("/login"); return; }
@@ -105,25 +116,39 @@ export default function StatusPage() {
     if (showSpinner) setLoading(true);
     else setRefreshing(true);
     try {
-      const res = await fetchUploadsList(undefined, 100);
+      const res = await fetchUploadsList(statusFilter || undefined, 200, 0, search || undefined);
       setJobs(res.jobs);
     } catch { /* */ }
     finally { setLoading(false); setRefreshing(false); }
+  }, [statusFilter, search]);
+
+  const handleFilterChange = useCallback((s: string) => {
+    setStatusFilter(s);
+    setActivePage(0);
+    setCompletedPage(0);
   }, []);
 
-  useEffect(() => { if (user?.role === "maintainer") void load(); }, [load, user]);
+  useEffect(() => { void load(); }, [load]);
 
   const handleRetry = useCallback(async (jobId: string) => {
     setRetryingId(jobId);
     try {
       await retryJob(jobId);
-      await load(false);
+      void load(false);
     } catch { /* */ }
     finally { setRetryingId(null); }
   }, [load]);
 
-  const activeJobs = jobs.filter((j) => isActiveStatus(j.status));
-  const completedJobs = jobs.filter((j) => !isActiveStatus(j.status));
+  const filterFn = useCallback((j: UploadJobResponse) => {
+    if (search && !j.original_filename.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  }, [search]);
+
+  const allActiveJobs = jobs.filter((j) => isActiveStatus(j.status) && filterFn(j));
+  const allCompletedJobs = jobs.filter((j) => !isActiveStatus(j.status) && filterFn(j));
+
+  const activeSlice = allActiveJobs.slice(activePage * activePageSize, (activePage + 1) * activePageSize);
+  const completedSlice = allCompletedJobs.slice(completedPage * completedPageSize, (completedPage + 1) * completedPageSize);
 
   if (authLoading || !user) return <div className="flex h-screen items-center justify-center bg-[var(--bg)]"><Spinner /></div>;
 
@@ -149,35 +174,128 @@ export default function StatusPage() {
           </button>
         </div>
 
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <div className="relative">
+            <svg className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--muted)]" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+            </svg>
+            <input
+              type="text"
+              value={searchInput}
+              onChange={(e) => {
+                setSearchInput(e.target.value);
+                if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+                searchTimerRef.current = setTimeout(() => {
+                  setSearch(e.target.value);
+                  setActivePage(0);
+                  setCompletedPage(0);
+                }, 300);
+              }}
+              placeholder="Search files…"
+              className="rounded-xl border border-[var(--border)] py-2 pl-9 pr-3 text-sm outline-none transition focus:border-[var(--accent-dim)] focus:ring-1 focus:ring-[var(--accent-dim)]"
+            />
+            {searchInput && (
+              <button
+                onClick={() => { setSearchInput(""); setSearch(""); setActivePage(0); setCompletedPage(0); }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--muted)] hover:text-[var(--text)]"
+              >
+                <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            {["", "QUEUED", "RUNNING", "COMPLETED", "FAILED"].map((s) => (
+              <button
+                key={s}
+                onClick={() => handleFilterChange(s)}
+                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                  statusFilter === s
+                    ? "border-[var(--accent-dim)] bg-[var(--accent-dim)] text-white"
+                    : "border-[var(--border)] text-[var(--muted)] hover:bg-[var(--bg)]"
+                }`}
+              >
+                {s || "All"}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {loading ? (
           <div className="flex justify-center py-20"><Spinner /></div>
         ) : (
-          <div className="space-y-8">
-            <section>
-              <div className="mb-3 flex items-center gap-2">
-                <h2 className="font-semibold">🟢 Active Jobs</h2>
-                <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-700">{activeJobs.length}</span>
-              </div>
-              {activeJobs.length === 0 ? (
-                <p className="rounded-xl border border-dashed border-[var(--border)] py-8 text-center text-sm text-[var(--muted)]">
-                  No active ingestion jobs
-                </p>
-              ) : (
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {activeJobs.map((j) => <JobProgressCard key={j.id} job={j} onRetry={handleRetry} retrying={retryingId} />)}
+          <div className="space-y-6">
+            <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
+              <button
+                onClick={() => setActiveExpanded((p) => !p)}
+                className="flex w-full items-center justify-between px-5 py-4 text-left transition hover:bg-[var(--bg)]"
+              >
+                <div className="flex items-center gap-2">
+                  <h2 className="font-semibold">🟢 Active Jobs</h2>
+                  <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-700">{allActiveJobs.length}</span>
+                </div>
+                <svg className={`h-4 w-4 text-[var(--muted)] transition-transform ${activeExpanded ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+              {activeExpanded && (
+                <div className="border-t border-[var(--border)] p-4">
+                  {activeSlice.length === 0 ? (
+                    <p className="rounded-xl border border-dashed border-[var(--border)] py-8 text-center text-sm text-[var(--muted)]">
+                      No active ingestion jobs
+                    </p>
+                  ) : (
+                    <>
+                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        {activeSlice.map((j) => <JobProgressCard key={j.id} job={j} onRetry={handleRetry} retrying={retryingId} />)}
+                      </div>
+                      <Pagination
+                        page={activePage}
+                        pageSize={activePageSize}
+                        total={allActiveJobs.length}
+                        onPageChange={setActivePage}
+                        onPageSizeChange={(s) => { setActivePageSize(s); setActivePage(0); }}
+                      />
+                    </>
+                  )}
                 </div>
               )}
             </section>
 
-            <section>
-              <h2 className="mb-3 font-semibold">📋 Recent History</h2>
-              {completedJobs.length === 0 ? (
-                <p className="rounded-xl border border-dashed border-[var(--border)] py-8 text-center text-sm text-[var(--muted)]">
-                  No completed jobs yet
-                </p>
-              ) : (
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {completedJobs.slice(0, 30).map((j) => <JobProgressCard key={j.id} job={j} onRetry={handleRetry} retrying={retryingId} />)}
+            <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
+              <button
+                onClick={() => setCompletedExpanded((p) => !p)}
+                className="flex w-full items-center justify-between px-5 py-4 text-left transition hover:bg-[var(--bg)]"
+              >
+                <div className="flex items-center gap-2">
+                  <h2 className="font-semibold">📋 Recent History</h2>
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600">{allCompletedJobs.length}</span>
+                </div>
+                <svg className={`h-4 w-4 text-[var(--muted)] transition-transform ${completedExpanded ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+              {completedExpanded && (
+                <div className="border-t border-[var(--border)] p-4">
+                  {completedSlice.length === 0 ? (
+                    <p className="rounded-xl border border-dashed border-[var(--border)] py-8 text-center text-sm text-[var(--muted)]">
+                      No completed jobs yet
+                    </p>
+                  ) : (
+                    <>
+                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        {completedSlice.map((j) => <JobProgressCard key={j.id} job={j} onRetry={handleRetry} retrying={retryingId} />)}
+                      </div>
+                      <Pagination
+                        page={completedPage}
+                        pageSize={completedPageSize}
+                        total={allCompletedJobs.length}
+                        onPageChange={setCompletedPage}
+                        onPageSizeChange={(s) => { setCompletedPageSize(s); setCompletedPage(0); }}
+                      />
+                    </>
+                  )}
                 </div>
               )}
             </section>
