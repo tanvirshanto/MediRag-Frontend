@@ -3,11 +3,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { useToast } from "@/context/ToastContext";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Spinner } from "@/components/ui/Spinner";
-import { streamAsk, uploadSinglePdf, fetchUploadsList, retryJob } from "@/lib/api";
-import { isActiveStatus, type ChatMessage, type IngestionJob } from "@/lib/types";
+import {
+  streamAsk,
+  uploadSinglePdf,
+  fetchUploadsList,
+  retryJob,
+  listConversations,
+  createConversation,
+  getConversation,
+  deleteConversation,
+  updateConversation,
+} from "@/lib/api";
+import { isActiveStatus, type ChatMessage, type IngestionJob, type ConversationResponse } from "@/lib/types";
 
 function ChatBubble({ m }: { m: ChatMessage }) {
   const isUser = m.role === "user";
@@ -15,52 +26,58 @@ function ChatBubble({ m }: { m: ChatMessage }) {
 
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"} animate-fade-in`}>
-  <div className="max-w-[80%] flex flex-col">
-
-    {/* Bubble */}
-    <div
-      className={`
-        px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap
-        shadow-sm
-        ${isUser
-          ? "bg-blue-600 text-white rounded-2xl rounded-br-md"
-          : "bg-gray-100 text-gray-800 rounded-2xl rounded-bl-md border border-gray-200"
-        }
-      `}
-    >
-      {isStreaming && !isUser ? (
-        <span className="flex items-center gap-2 text-gray-500">
-          <Spinner size={14} /> Thinking…
-        </span>
-      ) : (
-        <>
-          {m.content || ""}
-          {!isUser && m.streaming && m.content && (
-            <span className="inline-block w-[0.5em] h-[1.1em] ml-0.5 align-text-bottom bg-gray-800 animate-pulse rounded-[1px]" />
+      <div className="max-w-[80%] flex flex-col">
+        <div
+          className={`
+            px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap
+            shadow-sm
+            ${isUser
+              ? "bg-blue-600 text-white rounded-2xl rounded-br-md"
+              : "bg-gray-100 text-gray-800 rounded-2xl rounded-bl-md border border-gray-200"
+            }
+          `}
+        >
+          {isStreaming && !isUser ? (
+            <span className="flex items-center gap-2 text-gray-500">
+              <Spinner size={14} /> Thinking…
+            </span>
+          ) : (
+            <>
+              {m.content || ""}
+              {!isUser && m.streaming && m.content && (
+                <span className="inline-block w-[0.5em] h-[1.1em] ml-0.5 align-text-bottom bg-gray-800 animate-pulse rounded-[1px]" />
+              )}
+            </>
           )}
-        </>
-      )}
+        </div>
+        <p
+          className={`mt-1 text-[10px] text-gray-400 ${
+            isUser ? "text-right" : "text-left"
+          }`}
+        >
+          {m.timestamp && new Date(m.timestamp).toLocaleTimeString()}
+        </p>
+      </div>
     </div>
-
-    {/* Timestamp */}
-    <p
-      className={`mt-1 text-[10px] text-gray-400 ${
-        isUser ? "text-right" : "text-left"
-      }`}
-    >
-      {m.timestamp && new Date(m.timestamp).toLocaleTimeString()}
-    </p>
-
-  </div>
-</div>
   );
 }
 
 export default function ChatPage() {
   const { user, loading: authLoading } = useAuth();
+  const { addToast } = useToast();
   const router = useRouter();
   const isMaintainer = user?.role === "maintainer";
 
+  // Conversation state
+  const [conversations, setConversations] = useState<ConversationResponse[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [conversationsLoading, setConversationsLoading] = useState(false);
+  const [creatingConversation, setCreatingConversation] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameTitle, setRenameTitle] = useState("");
+
+  // Chat state
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -85,6 +102,89 @@ export default function ChatPage() {
     if (!authLoading && !user) router.replace("/login");
   }, [authLoading, user, router]);
 
+  // Load conversations
+  const loadConversations = useCallback(async () => {
+    setConversationsLoading(true);
+    try {
+      const res = await listConversations();
+      setConversations(res.conversations);
+    } catch (err) {
+      addToast("error", err instanceof Error ? err.message : "Failed to load conversations");
+    } finally {
+      setConversationsLoading(false);
+    }
+  }, [addToast]);
+
+  useEffect(() => {
+    if (user) void loadConversations();
+  }, [user, loadConversations]);
+
+  // Load conversation history
+  const loadConversation = useCallback(async (conversationId: string) => {
+    try {
+      const res = await getConversation(conversationId);
+      const loadedMessages: ChatMessage[] = res.messages.map((m) => ({
+        id: m.id,
+        role: m.role as "user" | "assistant",
+        content: m.content,
+        timestamp: new Date(m.created_at).getTime(),
+      }));
+      setMessages(loadedMessages);
+      setActiveConversationId(conversationId);
+    } catch (err) {
+      addToast("error", err instanceof Error ? err.message : "Failed to load conversation");
+    }
+  }, [addToast]);
+
+  const handleNewConversation = useCallback(async () => {
+    setCreatingConversation(true);
+    try {
+      const res = await createConversation();
+      setConversations((prev) => [res, ...prev]);
+      setActiveConversationId(res.id);
+      setMessages([]);
+      setError(null);
+    } catch (err) {
+      addToast("error", err instanceof Error ? err.message : "Failed to create conversation");
+    } finally {
+      setCreatingConversation(false);
+    }
+  }, [addToast]);
+
+  const handleDeleteConversation = useCallback(async (conversationId: string) => {
+    setDeletingId(conversationId);
+    try {
+      await deleteConversation(conversationId);
+      setConversations((prev) => prev.filter((c) => c.id !== conversationId));
+      if (activeConversationId === conversationId) {
+        setActiveConversationId(null);
+        setMessages([]);
+      }
+      addToast("success", "Conversation deleted");
+    } catch (err) {
+      addToast("error", err instanceof Error ? err.message : "Failed to delete conversation");
+    } finally {
+      setDeletingId(null);
+    }
+  }, [activeConversationId, addToast]);
+
+  const handleRename = useCallback(async (conversationId: string) => {
+    if (!renameTitle.trim()) {
+      setRenamingId(null);
+      return;
+    }
+    try {
+      await updateConversation(conversationId, { title: renameTitle.trim() });
+      setConversations((prev) =>
+        prev.map((c) => (c.id === conversationId ? { ...c, title: renameTitle.trim() } : c))
+      );
+      setRenamingId(null);
+      addToast("success", "Conversation renamed");
+    } catch (err) {
+      addToast("error", err instanceof Error ? err.message : "Failed to rename conversation");
+    }
+  }, [renameTitle, addToast]);
+
   const loadJobs = useCallback(() => {
     if (!isMaintainer) return;
     const fetch = async () => {
@@ -103,7 +203,6 @@ export default function ChatPage() {
     void fetch();
   }, [isMaintainer]);
 
-  // Load jobs for maintainer
   useEffect(() => {
     if (!isMaintainer) return;
     fetchUploadsList().then((res) => {
@@ -149,6 +248,8 @@ export default function ChatPage() {
     pendingRef.current = "";
     answerRef.current = "";
 
+    let currentConversationId = activeConversationId;
+
     let flushTimer: ReturnType<typeof setInterval> | null = setInterval(() => {
       if (pendingRef.current.length === 0) return;
       const chars = Math.min(pendingRef.current.length, 4);
@@ -159,7 +260,7 @@ export default function ChatPage() {
     }, 16);
 
     try {
-      for await (const event of streamAsk(q, ac.signal)) {
+      for await (const event of streamAsk(q, ac.signal, currentConversationId || undefined)) {
         if (event.type === "token") {
           pendingRef.current += event.content;
         } else if (event.type === "error") throw new Error(event.detail);
@@ -183,7 +284,12 @@ export default function ChatPage() {
     setMessages((p) => p.map((m) => m.id === aid ? { ...m, content: answerRef.current, streaming: false } : m));
     setSending(false);
     abortRef.current = null;
-  }, [input, sending]);
+
+    // If this was a new conversation, reload conversations to get the new title
+    if (!currentConversationId) {
+      void loadConversations();
+    }
+  }, [input, sending, activeConversationId, scrollDown, loadConversations]);
 
   const handleFiles = useCallback(async (files: FileList | File[]) => {
     const pdfs = Array.from(files).filter((f) => f.name.toLowerCase().endsWith(".pdf"));
@@ -233,11 +339,126 @@ export default function ChatPage() {
   return (
     <DashboardLayout>
       <div className="flex h-full">
+        {/* Conversations sidebar */}
+        <aside className="hidden w-64 shrink-0 flex-col border-r border-[var(--border)] bg-[var(--surface)] md:flex">
+          <div className="flex items-center justify-between border-b border-[var(--border)] p-3">
+            <h3 className="text-sm font-semibold">Conversations</h3>
+            <button
+              onClick={handleNewConversation}
+              disabled={creatingConversation}
+              className="inline-flex items-center gap-1 rounded-lg bg-[var(--accent-dim)] px-2.5 py-1.5 text-xs font-medium text-white transition hover:brightness-110 disabled:opacity-50"
+            >
+              {creatingConversation ? <Spinner size={12} /> : (
+                <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+                </svg>
+              )}
+              New
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-2">
+            {conversationsLoading ? (
+              <div className="flex justify-center py-8"><Spinner size={20} /></div>
+            ) : conversations.length === 0 ? (
+              <p className="py-8 text-center text-xs text-[var(--muted)]">No conversations yet</p>
+            ) : (
+              <ul className="space-y-1">
+                {conversations.map((c) => (
+                  <li key={c.id}>
+                    {renamingId === c.id ? (
+                      <form
+                        onSubmit={(e) => { e.preventDefault(); void handleRename(c.id); }}
+                        className="px-2 py-1.5"
+                      >
+                        <input
+                          autoFocus
+                          value={renameTitle}
+                          onChange={(e) => setRenameTitle(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Escape") setRenamingId(null); }}
+                          className="w-full rounded border border-[var(--border)] px-2 py-1 text-xs outline-none focus:border-[var(--accent-dim)]"
+                        />
+                        <div className="mt-1 flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setRenamingId(null)}
+                            className="rounded px-2 py-1 text-[10px] font-medium text-[var(--muted)] hover:bg-[var(--bg)]"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            className="rounded bg-emerald-50 px-2 py-1 text-[10px] font-medium text-emerald-700 hover:bg-emerald-100"
+                          >
+                            Save
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <div
+                        onClick={() => {
+                          if (activeConversationId !== c.id) {
+                            void loadConversation(c.id);
+                          }
+                        }}
+                        className={`group flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-xs transition ${
+                          activeConversationId === c.id
+                            ? "bg-blue-50 text-blue-700"
+                            : "text-[var(--text)] hover:bg-[var(--bg)]"
+                        }`}
+                      >
+                        <svg className="h-3.5 w-3.5 shrink-0 text-[var(--muted)]" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
+                        </svg>
+                        <span className="flex-1 truncate">{c.title}</span>
+                        <span className="shrink-0 text-[10px] text-[var(--muted)] opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setRenamingId(c.id); setRenameTitle(c.title); }}
+                            className="rounded p-0.5 hover:bg-[var(--bg)]"
+                            title="Rename"
+                          >
+                            <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                              <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); void handleDeleteConversation(c.id); }}
+                            disabled={deletingId === c.id}
+                            className="rounded p-0.5 hover:bg-red-50 text-red-500 disabled:opacity-50"
+                            title="Delete"
+                          >
+                            {deletingId === c.id ? <Spinner size={10} /> : (
+                              <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                              </svg>
+                            )}
+                          </button>
+                        </span>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </aside>
+
         {/* Chat area */}
         <div className="flex min-w-0 flex-1 flex-col">
           {/* Chat header */}
-          <div className="border-b border-[var(--border)] bg-[var(--surface)] px-6 py-3">
-            <p className="text-sm font-semibold">💬 Chat</p>
+          <div className="border-b border-[var(--border)] bg-[var(--surface)] px-6 py-3 flex items-center justify-between">
+            <p className="text-sm font-semibold">
+              {activeConversationId
+                ? conversations.find((c) => c.id === activeConversationId)?.title || "Chat"
+                : "💬 Chat"}
+            </p>
+            {activeConversationId && (
+              <button
+                onClick={() => { setActiveConversationId(null); setMessages([]); setError(null); }}
+                className="text-xs text-[var(--muted)] hover:text-[var(--text)] transition"
+              >
+                Clear
+              </button>
+            )}
           </div>
 
           {/* Messages */}
@@ -247,7 +468,7 @@ export default function ChatPage() {
                 <div className="mb-3 text-4xl">🧬</div>
                 <p className="text-lg font-semibold">Medical Knowledge Assistant</p>
                 <p className="mt-1 max-w-md text-sm text-[var(--muted)]">
-                  Ask context-grounded questions using retrieved textbook knowledge.  
+                  Ask context-grounded questions using retrieved textbook knowledge.
                   Answers are sourced from uploaded documents only.
                 </p>
                 <div className="mt-6 grid grid-cols-2 gap-2 text-sm text-gray-600">
@@ -291,7 +512,7 @@ export default function ChatPage() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }}
-                placeholder="Ask a medical question from indexed textbooks..."
+                placeholder={activeConversationId ? "Ask a follow-up question..." : "Ask a medical question from indexed textbooks..."}
                 disabled={sending}
                 className="flex-1 text-sm outline-none px-2"
               />

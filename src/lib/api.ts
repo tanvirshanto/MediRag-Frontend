@@ -1,7 +1,8 @@
 import type {
   LoginRequest, TokenResponse, UploadBulkResponse, UploadJobResponse,
   UploadListResponse, UserCreate, UserResponse, UserUpdate, StreamEvent,
-  SystemLog,
+  SystemLog, ConversationListResponse, ConversationResponse, ConversationDetailResponse,
+  ConversationCreate, ConversationUpdate,
 } from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "http://localhost:8000";
@@ -123,12 +124,29 @@ export function fetchSystemLogs(limit = 100, offset = 0): Promise<SystemLog[]> {
   return apiFetch(`/system-logs?${p.toString()}`);
 }
 
+// ── Conversations ──
+export function listConversations(): Promise<ConversationListResponse> {
+  return apiFetch("/conversations");
+}
+export function createConversation(body?: ConversationCreate): Promise<ConversationResponse> {
+  return apiFetch("/conversations", { method: "POST", body: JSON.stringify(body || {}) });
+}
+export function getConversation(conversationId: string): Promise<ConversationDetailResponse> {
+  return apiFetch(`/conversations/${conversationId}`);
+}
+export function updateConversation(conversationId: string, body: ConversationUpdate): Promise<ConversationResponse> {
+  return apiFetch(`/conversations/${conversationId}`, { method: "PATCH", body: JSON.stringify(body) });
+}
+export function deleteConversation(conversationId: string): Promise<void> {
+  return apiFetch(`/conversations/${conversationId}`, { method: "DELETE" });
+}
+
 // ── Ask (streaming) ──
-export async function* streamAsk(question: string, signal?: AbortSignal): AsyncGenerator<StreamEvent> {
+export async function* streamAsk(question: string, signal?: AbortSignal, conversationId?: string): AsyncGenerator<StreamEvent> {
   const res = await fetch(`${API_URL}/ask?stream=true`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
-    body: JSON.stringify({ question }), signal,
+    body: JSON.stringify({ question, conversation_id: conversationId }), signal,
   });
   if (!res.ok) {
     if (res.status === 401) handle401();

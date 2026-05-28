@@ -41,6 +41,23 @@ export interface ChatMessage {
   id: string; role: "user" | "assistant"; content: string; streaming?: boolean; timestamp: number;
 }
 
+// ── Conversations ──
+export interface ConversationResponse {
+  id: string; user_id: string; title: string; created_at: string; updated_at: string;
+}
+export interface ConversationListResponse {
+  conversations: ConversationResponse[];
+}
+export interface MessageResponse {
+  id: string; conversation_id: string; role: string; content: string; created_at: string;
+}
+export interface ConversationDetailResponse {
+  id: string; user_id: string; title: string; created_at: string; updated_at: string;
+  messages: MessageResponse[];
+}
+export interface ConversationCreate { title?: string; }
+export interface ConversationUpdate { title: string; }
+
 // ── Sidebar ──
 export interface NavItem {
   label: string; href: string; icon: string; roles: UserRole[];
