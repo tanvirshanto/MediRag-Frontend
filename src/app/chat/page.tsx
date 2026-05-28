@@ -33,19 +33,19 @@ function ChatBubble({ m }: { m: ChatMessage }) {
             shadow-sm
             ${isUser
               ? "bg-blue-600 text-white rounded-2xl rounded-br-md"
-              : "bg-gray-100 text-gray-800 rounded-2xl rounded-bl-md border border-gray-200"
+              : "bg-[var(--surface)] text-[var(--text)] rounded-2xl rounded-bl-md border border-[var(--border)]"
             }
           `}
         >
           {isStreaming && !isUser ? (
-            <span className="flex items-center gap-2 text-gray-500">
+            <span className="flex items-center gap-2 text-[var(--muted)]">
               <Spinner size={14} /> Thinking…
             </span>
           ) : (
             <>
               {m.content || ""}
               {!isUser && m.streaming && m.content && (
-                <span className="inline-block w-[0.5em] h-[1.1em] ml-0.5 align-text-bottom bg-gray-800 animate-pulse rounded-[1px]" />
+                <span className="inline-block w-[0.5em] h-[1.1em] ml-0.5 align-text-bottom bg-[var(--text)] animate-pulse rounded-[1px]" />
               )}
             </>
           )}
@@ -340,11 +340,11 @@ export default function ChatPage() {
     <DashboardLayout>
       <div className="flex h-full">
         {/* Conversations sidebar */}
-        <aside className="hidden w-64 shrink-0 flex-col border-r border-[var(--border)] bg-[var(--surface)] md:flex">
+        <aside className="hidden w-72 shrink-0 flex-col border-r border-[var(--border)] bg-[var(--surface)] md:flex">
           <div className="flex items-center justify-between border-b border-[var(--border)] p-3">
             <h3 className="text-sm font-semibold">Conversations</h3>
             <button
-              onClick={handleNewConversation}
+               onClick={() => { setActiveConversationId(null); setMessages([]); setError(null); }}
               disabled={creatingConversation}
               className="inline-flex items-center gap-1 rounded-lg bg-[var(--accent-dim)] px-2.5 py-1.5 text-xs font-medium text-white transition hover:brightness-110 disabled:opacity-50"
             >
@@ -360,7 +360,13 @@ export default function ChatPage() {
             {conversationsLoading ? (
               <div className="flex justify-center py-8"><Spinner size={20} /></div>
             ) : conversations.length === 0 ? (
-              <p className="py-8 text-center text-xs text-[var(--muted)]">No conversations yet</p>
+              <div className="flex flex-col items-center py-12 text-center">
+                <svg className="h-8 w-8 text-[var(--border)] mb-2" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
+                </svg>
+                <p className="text-xs text-[var(--muted)]">No conversations yet</p>
+                <p className="mt-1 text-[10px] text-[var(--muted)]">Start a new chat to begin</p>
+              </div>
             ) : (
               <ul className="space-y-1">
                 {conversations.map((c) => (
@@ -446,17 +452,19 @@ export default function ChatPage() {
         <div className="flex min-w-0 flex-1 flex-col">
           {/* Chat header */}
           <div className="border-b border-[var(--border)] bg-[var(--surface)] px-6 py-3 flex items-center justify-between">
-            <p className="text-sm font-semibold">
-              {activeConversationId
-                ? conversations.find((c) => c.id === activeConversationId)?.title || "Chat"
-                : "💬 Chat"}
-            </p>
+            <div className="flex items-center gap-2 min-w-0">
+              <p className="text-sm font-semibold truncate">
+                {activeConversationId
+                  ? conversations.find((c) => c.id === activeConversationId)?.title || "Chat"
+                  : "Chat"}
+              </p>
+            </div>
             {activeConversationId && (
               <button
                 onClick={() => { setActiveConversationId(null); setMessages([]); setError(null); }}
-                className="text-xs text-[var(--muted)] hover:text-[var(--text)] transition"
+                className="shrink-0 text-xs text-[var(--muted)] hover:text-[var(--text)] transition"
               >
-                Clear
+                New Chat
               </button>
             )}
           </div>
@@ -471,7 +479,7 @@ export default function ChatPage() {
                   Ask context-grounded questions using retrieved textbook knowledge.
                   Answers are sourced from uploaded documents only.
                 </p>
-                <div className="mt-6 grid grid-cols-2 gap-2 text-sm text-gray-600">
+                <div className="mt-6 grid grid-cols-2 gap-2 text-sm text-[var(--muted)]">
                   {[
                     "What are CT findings in pneumonia?",
                     "Mechanism of beta blockers?",
@@ -481,7 +489,7 @@ export default function ChatPage() {
                     <button
                       key={q}
                       onClick={() => setInput(q)}
-                      className="p-2 border rounded-lg hover:bg-gray-50 transition text-left"
+                      className="p-2 border border-[var(--border)] rounded-lg hover:bg-[var(--bg)] transition text-left"
                     >
                       {q}
                     </button>
@@ -611,7 +619,12 @@ export default function ChatPage() {
                 )}
               </div>
               {jobs.filter((j) => j.status !== "COMPLETED").length === 0 ? (
-                <p className="py-8 text-center text-xs text-[var(--muted)]">No active uploads</p>
+                <div className="flex flex-col items-center py-8 text-center">
+                  <svg className="h-8 w-8 text-[var(--border)] mb-2" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                  </svg>
+                  <p className="text-xs text-[var(--muted)]">No active uploads</p>
+                </div>
               ) : (
                 <ul className="space-y-2">
                   {jobs.filter((j) => j.status !== "COMPLETED").map((j) => (

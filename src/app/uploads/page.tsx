@@ -122,7 +122,7 @@ export default function UploadsPage() {
             <h1 className="text-xl font-bold">Upload Management</h1>
             <p className="mt-1 text-sm text-[var(--muted)]">{total} total jobs</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <button
               onClick={() => load(false)}
               disabled={refreshing}
@@ -183,25 +183,26 @@ export default function UploadsPage() {
         {/* Upload zone */}
         <div className="mb-6">
           <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6">
-            <h3 className="mb-4 text-sm font-semibold">📄 Upload PDFs</h3>
-            <div
-              role="button"
-              tabIndex={0}
+            <h3 className="mb-4 text-sm font-semibold">Upload PDFs</h3>
+            <button
+              type="button"
               onClick={() => fileInputRef.current?.click()}
-              onKeyDown={(e) => { if (e.key === "Enter") fileInputRef.current?.click(); }}
               onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
               onDragLeave={() => setDragging(false)}
               onDrop={(e) => { e.preventDefault(); setDragging(false); if (e.dataTransfer.files.length) void handleFiles(e.dataTransfer.files); }}
-              className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 text-center transition ${
+              disabled={uploading}
+              className={`flex w-full cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 text-center transition ${
                 dragging ? "border-[var(--accent-dim)] bg-blue-50" : "border-[var(--border)] hover:border-[var(--accent-dim)] hover:bg-[var(--bg)]"
               } ${uploading ? "pointer-events-none opacity-50" : ""}`}
             >
-              <span className="text-3xl">📤</span>
+              <svg className="h-8 w-8 text-[var(--muted)]" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clipRule="evenodd" />
+              </svg>
               <p className="mt-3 text-sm font-medium">
                 {uploading ? "Uploading…" : "Drop PDFs here or click to browse"}
               </p>
               <p className="mt-1 text-xs text-[var(--muted)]">Multiple PDF files supported (max 32MB each)</p>
-            </div>
+            </button>
             <input
               ref={fileInputRef}
               type="file"
@@ -251,7 +252,7 @@ export default function UploadsPage() {
           <div className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-[var(--border)] bg-[var(--bg)] text-left text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
+                <tr className="border-b border-[var(--border)] bg-[var(--bg)] text-left text-xs font-semibold text-[var(--muted)]">
                   <th className="px-5 py-3">File</th>
                   <th className="px-5 py-3 hidden sm:table-cell">Uploaded by</th>
                   <th className="px-5 py-3">Status</th>
@@ -278,7 +279,9 @@ export default function UploadsPage() {
                         {j.total_chunks != null ? <span className="text-emerald-600 font-semibold">{j.total_chunks}</span> : "—"}
                       </td>
                       <td className="px-5 py-3 text-right text-[var(--muted)]">
-                        {expandedId === j.id ? "▲" : "▼"}
+                        <svg className={`h-4 w-4 inline-block transition-transform ${expandedId === j.id ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                        </svg>
                       </td>
                     </tr>
                     {expandedId === j.id && (
@@ -339,7 +342,13 @@ export default function UploadsPage() {
               </tbody>
             </table>
             {jobs.length === 0 && (
-              <div className="py-16 text-center text-sm text-[var(--muted)]">No uploads found.</div>
+              <div className="flex flex-col items-center py-16 text-center">
+                <svg className="h-10 w-10 text-[var(--border)] mb-3" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
+                </svg>
+                <p className="text-sm font-medium text-[var(--muted)]">No uploads found</p>
+                <p className="mt-1 text-xs text-[var(--muted)]">Upload PDFs to get started</p>
+              </div>
             )}
           </div>
         )}

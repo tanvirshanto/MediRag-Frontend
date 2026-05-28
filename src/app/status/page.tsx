@@ -12,7 +12,7 @@ import { formatDate, timeAgo, isActiveStatus, type JobStatus, type UploadJobResp
 
 function JobProgressCard({ job, onRetry, retrying }: { job: UploadJobResponse; onRetry: (id: string) => void; retrying: string | null }) {
   return (
-    <div className={`rounded-xl border p-4 transition-all ${
+    <div className={`rounded-xl border p-4 transition-all hover:shadow-sm ${
       job.status === "RUNNING" ? "border-blue-200 bg-blue-50/30 ring-1 ring-blue-200" :
       job.status === "COMPLETED" ? "border-emerald-200 bg-emerald-50/20" :
       job.status === "FAILED" ? "border-red-200 bg-red-50/20" :
@@ -28,10 +28,10 @@ function JobProgressCard({ job, onRetry, retrying }: { job: UploadJobResponse; o
         </div>
         <StatusBadge status={job.status} />
       </div>
-      {job.status === "RUNNING" && (
+      {job.status !== "QUEUED" && job.status !== "COMPLETED" && job.status !== "FAILED" && (
         <div className="mt-3">
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--border)]">
-            <div className="h-full w-2/3 animate-progress rounded-full bg-[var(--accent-dim)]" />
+            <div className="h-full w-full animate-indeterminate rounded-full bg-[var(--accent-dim)]" />
           </div>
           <p className="mt-1 text-[10px] text-[var(--muted)]">Processing… started {timeAgo(job.started_at)}</p>
         </div>
@@ -232,7 +232,7 @@ export default function StatusPage() {
                 className="flex w-full items-center justify-between px-5 py-4 text-left transition hover:bg-[var(--bg)]"
               >
                 <div className="flex items-center gap-2">
-                  <h2 className="font-semibold">🟢 Active Jobs</h2>
+                  <h2 className="font-semibold">Active Jobs</h2>
                   <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-700">{allActiveJobs.length}</span>
                 </div>
                 <svg className={`h-4 w-4 text-[var(--muted)] transition-transform ${activeExpanded ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor">
@@ -242,9 +242,12 @@ export default function StatusPage() {
               {activeExpanded && (
                 <div className="border-t border-[var(--border)] p-4">
                   {activeSlice.length === 0 ? (
-                    <p className="rounded-xl border border-dashed border-[var(--border)] py-8 text-center text-sm text-[var(--muted)]">
-                      No active ingestion jobs
-                    </p>
+                    <div className="flex flex-col items-center py-8 text-center">
+                      <svg className="h-8 w-8 text-[var(--border)] mb-2" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                      </svg>
+                      <p className="text-sm text-[var(--muted)]">No active ingestion jobs</p>
+                    </div>
                   ) : (
                     <>
                       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -269,7 +272,7 @@ export default function StatusPage() {
                 className="flex w-full items-center justify-between px-5 py-4 text-left transition hover:bg-[var(--bg)]"
               >
                 <div className="flex items-center gap-2">
-                  <h2 className="font-semibold">📋 Recent History</h2>
+                  <h2 className="font-semibold">Recent History</h2>
                   <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600">{allCompletedJobs.length}</span>
                 </div>
                 <svg className={`h-4 w-4 text-[var(--muted)] transition-transform ${completedExpanded ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor">
@@ -279,9 +282,12 @@ export default function StatusPage() {
               {completedExpanded && (
                 <div className="border-t border-[var(--border)] p-4">
                   {completedSlice.length === 0 ? (
-                    <p className="rounded-xl border border-dashed border-[var(--border)] py-8 text-center text-sm text-[var(--muted)]">
-                      No completed jobs yet
-                    </p>
+                    <div className="flex flex-col items-center py-8 text-center">
+                      <svg className="h-8 w-8 text-[var(--border)] mb-2" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                      </svg>
+                      <p className="text-sm text-[var(--muted)]">No completed jobs yet</p>
+                    </div>
                   ) : (
                     <>
                       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
